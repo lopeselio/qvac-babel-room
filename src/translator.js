@@ -1,3 +1,5 @@
+import { ensureFits } from './fit.js'
+
 // Picks and caches on-device translation models for each language pair.
 //
 // Bergamot (fast, small, ~15-40 MB per direction) ships pairs to and from
@@ -48,7 +50,8 @@ export class Translator {
   /**
    * @param {{ sdk: any, target: string, allowLlm?: boolean, onStatus?: (s: object) => void }} opts
    */
-  constructor ({ sdk, target, allowLlm = false, onStatus = () => {} }) {
+  constructor ({ sdk, target, allowLlm = false, onStatus = () => {}, force = false }) {
+    this.force = force
     this.sdk = sdk
     this.target = target
     this.allowLlm = allowLlm
@@ -75,8 +78,11 @@ export class Translator {
         if (route.kind === 'llm') {
           if (!this.llm) {
             this.onStatus({ type: 'loading', from, to, route })
-            this.llm = this.sdk.loadModel({ modelSrc: this.sdk[route.model], modelConfig: { ctx_size: 2048 } })
+            const load = { modelSrc: this.sdk[route.model], modelConfig: { ctx_size: 2048 } }
+            this.llm = ensureFits(this.sdk, [{ ...load, modelType: 'llamacpp-completion' }], { force: this.force })
+              .then(() => this.sdk.loadModel(load))
               .then((modelId) => ({ modelId, queue: new Serial() }))
+            this.llm.catch(() => { this.llm = null })
           }
           const { modelId, queue } = await this.llm
           return { modelId, route, queue }

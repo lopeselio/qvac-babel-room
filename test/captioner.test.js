@@ -75,3 +75,17 @@ test('Captioner wires ffmpeg → transcribeStream session → text events, and m
   await cap.stop()
   await ended
 })
+
+test('Captioner refuses to download a model that likely will not fit, unless forced', async () => {
+  const tooBig = { verdict: 'likely-too-large', models: [{ name: 'WHISPER_BASE_Q8_0', verdict: 'likely-too-large', reasons: ['needs 900 MiB against a 100 MiB budget'] }] }
+  let loads = 0
+  const sdk = {
+    ...has('WHISPER_BASE_Q8_0', 'VAD_SILERO_5_1_2'),
+    async assessModelFit (p) { assert.equal(p.models[0].modelType, 'whispercpp-transcription'); return tooBig },
+    async loadModel () { loads++; return 'asr' }
+  }
+  await assert.rejects(new Captioner({ sdk, lang: 'ko' }).load(), /likely can't hold/)
+  assert.equal(loads, 0)
+  await new Captioner({ sdk, lang: 'ko', force: true }).load()
+  assert.equal(loads, 1)
+})

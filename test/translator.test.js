@@ -88,3 +88,14 @@ test('a failed load is not cached', async () => {
   fail = false
   assert.equal((await tr.translate('hola', 'es')).text, '[es>en] hola')
 })
+
+test('LLM fallback is fit-checked; a refusal is not cached', async () => {
+  const { sdk, calls } = fakeSdk()
+  let verdict = 'likely-too-large'
+  sdk.assessModelFit = async () => ({ verdict, models: [{ name: 'SALAMANDRATA_2B_INST_Q4', verdict, reasons: [] }] })
+  const tr = new Translator({ sdk, target: 'es', allowLlm: true })
+  await assert.rejects(tr.translate('こんにちは', 'ja'), /likely can't hold/)
+  assert.equal(calls.load.length, 0)
+  verdict = 'likely-fits'
+  assert.equal((await tr.translate('こんにちは', 'ja')).route.kind, 'llm')
+})

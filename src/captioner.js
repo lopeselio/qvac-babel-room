@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
+import { ensureFits } from './fit.js'
 
 export const SAMPLE_RATE = 16000
 
@@ -62,8 +63,9 @@ export function fileArgs (file) {
  * Emits 'text' (string) for each finished utterance and 'status' for model loading.
  */
 export class Captioner extends EventEmitter {
-  constructor ({ sdk, lang, size = 'base', spawnFn = spawn }) {
+  constructor ({ sdk, lang, size = 'base', spawnFn = spawn, force = false }) {
     super()
+    this.force = force
     this.sdk = sdk
     this.lang = lang
     this.size = size
@@ -76,21 +78,24 @@ export class Captioner extends EventEmitter {
 
   async load () {
     const name = pickAsrModel(this.lang, this.size, this.sdk)
+    const modelConfig = {
+      vadModelSrc: this.sdk.VAD_SILERO_5_1_2,
+      audio_format: 'f32le',
+      strategy: 'greedy',
+      language: this.lang,
+      no_timestamps: true,
+      suppress_blank: true,
+      suppress_nst: true,
+      temperature: 0,
+      // Conservative VAD: fewer phantom captions from room noise.
+      vad_params: { threshold: 0.6, min_speech_duration_ms: 300, min_silence_duration_ms: 600, max_speech_duration_s: 12, speech_pad_ms: 200 }
+    }
+    const fit = await ensureFits(this.sdk, [{ modelSrc: this.sdk[name], modelType: 'whispercpp-transcription', modelConfig }], { force: this.force })
+    this.emit('status', { type: 'fit', model: name, fit })
     this.emit('status', { type: 'loading', model: name })
     this.modelId = await this.sdk.loadModel({
       modelSrc: this.sdk[name],
-      modelConfig: {
-        vadModelSrc: this.sdk.VAD_SILERO_5_1_2,
-        audio_format: 'f32le',
-        strategy: 'greedy',
-        language: this.lang,
-        no_timestamps: true,
-        suppress_blank: true,
-        suppress_nst: true,
-        temperature: 0,
-        // Conservative VAD: fewer phantom captions from room noise.
-        vad_params: { threshold: 0.6, min_speech_duration_ms: 300, min_silence_duration_ms: 600, max_speech_duration_s: 12, speech_pad_ms: 200 }
-      },
+      modelConfig,
       onProgress: (p) => this.emit('status', { type: 'download', model: name, percentage: p.percentage })
     })
     this.emit('status', { type: 'ready', model: name })
