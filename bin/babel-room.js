@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline'
 import { hostname, userInfo } from 'node:os'
 import { resolve } from 'node:path'
 import {
-  Room, Translator, Captioner, BabelSession, newRoomCode, normalizeRoomCode, bergamotLanguages
+  Room, Translator, Captioner, BabelSession, newRoomCode, normalizeRoomCode, bergamotLanguages, describeFit
 } from '../src/index.js'
 
 const HELP = `babel-room — live captions across languages, peer-to-peer, fully on-device
@@ -24,6 +24,7 @@ Join options:
   --llm               allow a 2B multilingual LLM for pairs Bergamot can't do
   --transcript <md>   append everything to a Markdown transcript
   --original          also show the original text under each translation
+  --force             load models even if the memory check says they won't fit
 
 While in a room: type to send a line, or use /lang <xx>, /peers, /mute, /unmute, /quit.
 Audio never leaves your device; only your caption text is sent, end-to-end encrypted, to peers.
@@ -63,6 +64,7 @@ async function main (argv) {
       llm: { type: 'boolean' },
       transcript: { type: 'string' },
       original: { type: 'boolean' },
+      force: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
   })
@@ -95,14 +97,15 @@ async function main (argv) {
 
   const sdk = await loadSdk()
   const status = (s) => {
+    if (s.type === 'fit') for (const l of describeFit(s.fit)) console.error(c.dim(`▸ memory check: ${l}`))
     if (s.type === 'loading') console.error(c.dim(`▸ loading ${s.model ?? `${s.from}→${s.to} (${s.route?.kind})`}`))
     if (s.type === 'ready' && s.model) console.error(c.dim(`▸ ${s.model} ready`))
   }
-  const translator = new Translator({ sdk, target: lang, allowLlm: v.llm, onStatus: status })
+  const translator = new Translator({ sdk, target: lang, allowLlm: v.llm, onStatus: status, force: v.force })
   const room = new Room({ code, name, lang })
   let captioner = null
   if (v.mic || v.file) {
-    captioner = new Captioner({ sdk, lang, size: asrSize })
+    captioner = new Captioner({ sdk, lang, size: asrSize, force: v.force })
     captioner.on('status', status)
   }
   const session = new BabelSession({ room, translator, captioner, transcriptPath: v.transcript ? resolve(v.transcript) : null })
