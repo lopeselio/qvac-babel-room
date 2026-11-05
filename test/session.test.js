@@ -72,8 +72,10 @@ test('writes a markdown transcript with originals', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'br-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const file = join(dir, 'meeting.md')
-  const s = new BabelSession({ room: fakeRoom(), translator: fakeTranslator(), transcriptPath: file, now: () => new Date('2026-11-05T10:15:00Z') })
+  const when = new Date('2026-11-05T10:15:00Z')
+  const s = new BabelSession({ room: fakeRoom(), translator: fakeTranslator(), transcriptPath: file, now: () => when })
   await s._incoming({ id: 'a', name: 'Ana', lang: 'es', text: 'hola', seq: 0 })
   await new Promise((r) => setTimeout(r, 20))
-  assert.equal(await readFile(file, 'utf8'), '- `10:15:00` **Ana**: hola (in en) _(es: hola)_\n')
+  // Local wall-clock time, matching what the terminal shows.
+  assert.equal(await readFile(file, 'utf8'), `- \`${when.toTimeString().slice(0, 8)}\` **Ana**: hola (in en) _(es: hola)_\n`)
 })

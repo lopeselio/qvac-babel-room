@@ -67,11 +67,12 @@ export class BabelSession extends EventEmitter {
   }
 
   _emitLine (line) {
-    const full = { ...line, at: this.now().toISOString() }
+    const when = this.now()
+    const full = { ...line, at: when.toISOString() }
     this.emit('line', full)
     if (this.transcriptPath) {
       const extra = full.original !== full.text ? ` _(${full.lang}: ${full.original})_` : ''
-      appendFile(this.transcriptPath, `- \`${full.at.slice(11, 19)}\` **${full.name}**: ${full.text}${extra}\n`).catch((e) => this.emit('error', e))
+      appendFile(this.transcriptPath, `- \`${when.toTimeString().slice(0, 8)}\` **${full.name}**: ${full.text}${extra}\n`).catch((e) => this.emit('error', e))
     }
   }
 
