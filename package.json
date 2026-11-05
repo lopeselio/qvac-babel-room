@@ -8,7 +8,7 @@
     ".": "./src/index.js"
   },
   "bin": {
-    "babel-room": "./bin/babel-room.js"
+    "babel-room": "bin/babel-room.js"
   },
   "files": [
     "bin",
