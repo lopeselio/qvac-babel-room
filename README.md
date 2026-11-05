@@ -37,10 +37,11 @@ $ babel-room join petal-hollow-tern-bloom-23 \      $ babel-room join petal-holl
 ## Install
 
 ```bash
-git clone https://github.com/lopeselio/qvac-babel-room && cd qvac-babel-room
-npm install
-npm link        # optional: puts `babel-room` on your PATH
+npm install -g qvac-babel-room          # puts `babel-room` on your PATH
+npm install qvac-babel-room   # library
 ```
+
+From source: `git clone https://github.com/lopeselio/qvac-babel-room && cd qvac-babel-room && npm install`.
 
 Requirements: Node.js 22+, and [ffmpeg](https://ffmpeg.org/) for microphone or file input. Models download on first use and are cached.
 
