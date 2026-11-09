@@ -50,9 +50,22 @@
   },
   "dependencies": {
     "@qvac/sdk": "^0.23.0",
+    "b4a": "^1.9.0",
+    "bare-crypto": "^1.15.4",
+    "bare-events": "^2.9.2",
     "hyperswarm": "^4.17.2"
   },
   "devDependencies": {
     "hyperdht": "^6.36.0"
+  },
+  "imports": {
+    "#crypto": {
+      "bare": "bare-crypto",
+      "default": "crypto"
+    },
+    "#events": {
+      "bare": "bare-events",
+      "default": "events"
+    }
   }
 }
