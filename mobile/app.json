@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Babel Room",
+    "slug": "babel-room",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "scheme": "babelroom",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.github.lopeselio.babelroom"
+    },
+    "android": {
+      "package": "io.github.lopeselio.babelroom",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0E0E18"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#0E0E18"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
+      [
+        "@qvac/sdk/expo-plugin",
+        {
+          "installMissingPrebuilds": true
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Babel Room records your voice while you hold the talk button. Whisper turns it into text on this phone; the audio never leaves it.",
+          "recordAudioAndroid": true
+        }
+      ],
+      "expo-router",
+      "./plugins/with-ios-scene-lifecycle",
+      "./plugins/with-room-worklet"
+    ]
+  }
+}
