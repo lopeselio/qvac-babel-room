@@ -27,11 +27,17 @@ function toPosix (uri: string) {
 let asr: { lang: string, model: string, modelId: string } | null = null
 let asrQueue: Promise<unknown> = Promise.resolve()
 
-/** Unload Whisper (e.g. when you switch language or leave). */
-export async function releaseSpeech () {
+async function unloadSpeech () {
   const a = asr
   asr = null
   if (a) await sdk.unloadModel({ modelId: a.modelId, clearStorage: false }).catch(() => {})
+}
+
+/** Unload Whisper when you leave; queued, so it never cuts a transcription short. */
+export function releaseSpeech (): Promise<void> {
+  const work = asrQueue.then(unloadSpeech)
+  asrQueue = work.catch(() => {})
+  return work
 }
 
 /**
@@ -41,7 +47,7 @@ export async function releaseSpeech () {
 export function transcribe (uri: string, lang: string, onStatus: (s: { state: 'loading' | 'downloading' | 'ready', model: string, download?: number }) => void): Promise<string> {
   const work = asrQueue.then(async () => {
     if (asr?.lang !== lang) {
-      await releaseSpeech()
+      await unloadSpeech()
       const model = pickAsrModel(lang, 'base', sdk)
       onStatus({ state: 'loading', model })
       const modelId: string = await sdk.loadModel({
