@@ -128,6 +128,7 @@ The screenshots show one room, `zebra-cotton-elm-mango-09`, with an iPhone 13 Pr
 - **Phone ↔ laptop in one room.** The room code was created on one side and joined from the other. Each side listed the other within seconds.
 - **Each side translates for itself.** The phone translated Crystal's Spanish into English with Bergamot on the iPhone ("Translating on this phone · 1 model ready"). The Mac translated Elio's English into Spanish.
 - **Speech stays local.** Crystal's lines were spoken into the web UI and transcribed by Whisper on the Mac; only the text reached the phone.
+- **Hold to talk works on the iPhone.** Speech recorded on the phone was transcribed by QVAC Whisper on the iPhone, then said in the room and translated on the other side.
 - **Casual speech is harder.** Whisper base made mistakes on fast, casual Spanish ("matriste", "estería"), and Bergamot translated those words as they came. Clear speech, or the `--asr small` model on a laptop, gives cleaner captions.
 
 ## Library
