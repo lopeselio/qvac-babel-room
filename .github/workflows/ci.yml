@@ -35,3 +35,28 @@ jobs:
       # scripts: the server's CSP only allows script-src 'self'.
       - run: npm run build
       - run: node ../scripts/check-no-inline-scripts.mjs dist/index.html
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      # The room worklet bundles ../src/room.js and its Hyperswarm dependencies from the root.
+      - run: npm ci
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm run lint
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+      - run: npm run worklet
+        working-directory: mobile
+      - run: npx expo export --platform ios --platform android --output-dir dist
+        working-directory: mobile
