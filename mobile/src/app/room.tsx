@@ -33,7 +33,8 @@ export default function RoomScreen () {
             <Text style={s.codeText} numberOfLines={1}>{room.code}</Text>
             <Text style={s.codeHint}>tap to share</Text>
           </Pressable>
-          <Pressable onPress={() => { void leave().then(() => router.replace('/')) }} style={s.leave} accessibilityRole='button'>
+          {/* Leaving clears the room, and the effect above goes back to the lobby. */}
+          <Pressable onPress={() => { void leave() }} style={s.leave} accessibilityRole='button'>
             <Text style={s.leaveText}>Leave</Text>
           </Pressable>
         </View>
