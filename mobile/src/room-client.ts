@@ -5,12 +5,12 @@ import { LineReader, utf8Encode } from './lines'
 // over IPC as newline-delimited JSON. See that file for the messages.
 
 export type FromRoom =
-  | { t: 'code', code: string }
-  | { t: 'joined', code: string }
-  | { t: 'left' }
+  | { t: 'code', rid: number, code: string }
+  | { t: 'joined', rid: number, code: string }
+  | { t: 'left', rid: number }
   | { t: 'peer' | 'left-peer' | 'lang', id: string, name: string, lang: string }
   | { t: 'caption', id: string, name: string, lang: string, text: string }
-  | { t: 'error', message: string, for?: string }
+  | { t: 'error', rid?: number, message: string }
 
 // Built by `npm run worklet` (bare-pack); a string module like QVAC's worker bundle.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -20,6 +20,7 @@ export class RoomClient {
   private worklet = new Worklet()
   private reader = new LineReader()
   private listeners = new Set<(m: FromRoom) => void>()
+  private nextRid = 1
 
   constructor () {
     this.worklet.start('/room.bundle', bundle)
@@ -38,15 +39,28 @@ export class RoomClient {
     this.worklet.IPC.write(utf8Encode(JSON.stringify(msg) + '\n'))
   }
 
-  /** Send and wait for the reply of type `expect` (or the error for this request). */
+  /**
+   * Send and wait for this request's reply. Each request carries an id the
+   * worklet echoes, so a late reply to an earlier request can't settle it.
+   */
   request<T extends FromRoom['t']> (msg: { t: string } & Record<string, unknown>, expect: T, timeoutMs = 30000): Promise<Extract<FromRoom, { t: T }>> {
+    const rid = this.nextRid++
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { off(); reject(new Error('The room network did not answer. Check your connection and try again.')) }, timeoutMs)
       const off = this.on((m) => {
-        if (m.t === expect) { clearTimeout(timer); off(); resolve(m as Extract<FromRoom, { t: T }>) }
-        if (m.t === 'error' && m.for === msg.t) { clearTimeout(timer); off(); reject(new Error(m.message)) }
+        if (!('rid' in m) || m.rid !== rid) return
+        clearTimeout(timer)
+        off()
+        if (m.t === expect) resolve(m as Extract<FromRoom, { t: T }>)
+        else if (m.t === 'error') reject(new Error(m.message))
       })
-      this.send(msg)
+      this.send({ ...msg, rid })
     })
+  }
+
+  /** Stop the worklet (and with it the swarm). */
+  close () {
+    this.listeners.clear()
+    this.worklet.terminate()
   }
 }
