@@ -33,26 +33,39 @@ export function RoomView ({ state, toast }: { state: ServerState, toast: (m: str
   const feed = useRef<HTMLDivElement>(null)
   const listening = state.mic.on
 
-  // Keep the newest caption in view.
-  useEffect(() => { feed.current?.scrollTo({ top: feed.current.scrollHeight, behavior: 'smooth' }) }, [state.lines.length])
+  // Keep the newest caption in view (keyed on the newest line: the count stops
+  // changing once the feed is at its 500-line cap).
+  const newest = state.lines[state.lines.length - 1]
+  useEffect(() => { feed.current?.scrollTo({ top: feed.current.scrollHeight, behavior: 'smooth' }) }, [newest])
   useEffect(() => () => { void mic.current?.stop() }, [])
+  // The server can switch the mic off by itself (leaving, a failed restart after
+  // a language change): stop capturing here too.
+  useEffect(() => {
+    if (!state.mic.on && mic.current) { void mic.current.stop(); mic.current = null }
+  }, [state.mic.on])
 
   async function toggleMic () {
     setError(null)
-    try {
-      if (listening) {
-        await mic.current?.stop()
-        mic.current = null
-        await api.mic(false)
-        return
-      }
-      const m = new Mic(setLevel, (err) => setError(err.message))
-      await m.start()
-      mic.current = m
-      await api.mic(true)
-    } catch (err) {
+    if (mic.current || listening) {
       await mic.current?.stop()
       mic.current = null
+      await api.mic(false).catch(() => {})
+      return
+    }
+    // Server first, so Whisper is loaded before any audio is captured.
+    try {
+      await api.mic(true)
+    } catch (err) {
+      setError((err as Error).message)
+      return
+    }
+    const m = new Mic(setLevel, (err) => setError(err.message))
+    try {
+      await m.start()
+      mic.current = m
+    } catch (err) {
+      await m.stop()
+      await api.mic(false).catch(() => {})
       setError((err as Error).message)
     }
   }
