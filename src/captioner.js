@@ -124,6 +124,24 @@ export class Captioner extends EventEmitter {
     return this
   }
 
+  /**
+   * Start a streaming session fed by push() instead of ffmpeg: the web UI
+   * sends the browser's microphone as mono f32le @16 kHz.
+   */
+  async startPush () {
+    if (!this.modelId) await this.load()
+    if (!this.session) {
+      this.session = await this.sdk.transcribeStream({ modelId: this.modelId })
+      this._pump()
+    }
+    return this
+  }
+
+  /** Feed raw mono f32le @16 kHz audio to a session started with startPush(). */
+  push (chunk) {
+    if (this.session && !this.muted) this.session.write(chunk)
+  }
+
   async _pump () {
     try {
       for await (const raw of this.session) {
@@ -141,6 +159,7 @@ export class Captioner extends EventEmitter {
   async stop () {
     this.proc?.kill()
     try { this.session?.end() } catch {}
+    this.session = null
     if (this.modelId) await this.sdk.unloadModel({ modelId: this.modelId, clearStorage: false }).catch(() => {})
     this.modelId = null
   }
