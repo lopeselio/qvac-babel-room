@@ -166,3 +166,26 @@ test('two people in one room: captions arrive translated, and the mic feeds Whis
     })
   })
 })
+
+test('leaving while Whisper is still loading unloads it and tells the client', async (t) => {
+  const sdk = fakeSdk()
+  let release
+  const unloaded = []
+  sdk.loadModel = async ({ modelConfig }) => {
+    if (modelConfig?.vadModelSrc) await new Promise((resolve) => { release = resolve })
+    return modelConfig?.vadModelSrc ? 'whisper-1' : 'm'
+  }
+  sdk.unloadModel = async ({ modelId }) => { unloaded.push(modelId) }
+  await withServer(t, { loadSdk: async () => sdk, bootstrap: [] }, async (url) => {
+    assert.equal((await post(url + 'api/room/join', { code: newRoomCode(), name: 'Ana', lang: 'es' })).status, 200)
+    const starting = post(url + 'api/mic', { on: true })
+    await until(async () => typeof release === 'function', 5000)
+    assert.equal((await post(url + 'api/room/leave', {})).status, 200)
+    release()
+    const res = await starting
+    assert.equal(res.status, 409)
+    assert.match(res.json().error, /room changed/)
+    await until(async () => unloaded.includes('whisper-1'), 5000)
+    assert.equal((await call(url + 'api/state')).json().room, null)
+  })
+})
