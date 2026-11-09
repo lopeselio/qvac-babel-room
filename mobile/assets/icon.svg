@@ -1,0 +1,37 @@
+<!-- Babel Room app icon: two overlapping speech bubbles, one person's words and
+     their translation. Source for icon.png, adaptive-icon.png, splash-icon.png
+     and favicon.png (rendered with headless Chrome). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E1B4B"/>
+      <stop offset="1" stop-color="#0E0E18"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.45" r="0.55">
+      <stop offset="0" stop-color="#818CF8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#818CF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g id="background">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#glow)"/>
+  </g>
+  <g id="glyph" stroke-linejoin="round" stroke-linecap="round">
+    <!-- back bubble: what you hear, translated -->
+    <path d="M430 300 H762 A90 90 0 0 1 852 390 V560 A90 90 0 0 1 762 650 H730 L770 744 L650 650 H430 A90 90 0 0 1 340 560 V390 A90 90 0 0 1 430 300 Z"
+          fill="#C7D2FE" stroke="#0E0E18" stroke-width="18"/>
+    <g stroke="#4F46E5" stroke-width="30">
+      <line x1="560" y1="420" x2="760" y2="420"/>
+      <line x1="560" y1="490" x2="720" y2="490"/>
+      <line x1="560" y1="560" x2="690" y2="560"/>
+    </g>
+    <!-- front bubble: what you say -->
+    <path d="M262 228 H560 A90 90 0 0 1 650 318 V478 A90 90 0 0 1 560 568 H350 L250 660 L276 568 H262 A90 90 0 0 1 172 478 V318 A90 90 0 0 1 262 228 Z"
+          fill="#6366F1" stroke="#0E0E18" stroke-width="18"/>
+    <g stroke="#EEF2FF" stroke-width="30">
+      <line x1="262" y1="338" x2="520" y2="338"/>
+      <line x1="262" y1="408" x2="560" y2="408"/>
+      <line x1="262" y1="478" x2="470" y2="478"/>
+    </g>
+  </g>
+</svg>
