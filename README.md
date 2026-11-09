@@ -109,6 +109,27 @@ Results from three Babel Room servers on one Mac (Spanish, English and Italian) 
 - **Ready in seconds.** Every peer had its translation models downloaded and loaded 12 s after joining. Afterwards each line appeared on the other screens within a few seconds of being said or sent.
 - **Models load one at a time.** With three languages, two routes need the same file (en → it directly, and es → it through it). Loading them in parallel failed in QVAC's model cache ("File descriptor could not be locked"), so the translator now loads models one after another.
 
+## Mobile app
+
+[`mobile/`](mobile/) is an Expo app for iPhone and Android:
+
+- **Talk and read:** hold to talk, and read everyone in your language.
+- **Same rooms everywhere:** it runs the same `Room` class as the CLI and the web UI, inside a Bare worklet, so a phone, a laptop and a terminal can all share one room code.
+- **On the phone:** QVAC Whisper and Bergamot run on the device.
+
+Build and run instructions are in [mobile/README.md](mobile/README.md).
+
+| iPhone (English) | Web UI on a Mac (Spanish) |
+|---|---|
+| ![The iPhone app in English: Crystal's Spanish lines translated es → en on the phone, Elio's own line, the hold-to-talk button and "Translating on this phone · 1 model ready"](docs/mobile/phone-room.png) | ![The web UI in Spanish in the same room: Crystal's spoken Spanish, and Elio's line from the iPhone translated en → es](docs/mobile/web-room-with-phone.png) |
+
+The screenshots show one room, `zebra-cotton-elm-mango-09`, with an iPhone 13 Pro Max and the web UI on a Mac:
+
+- **Phone ↔ laptop in one room.** The room code was created on one side and joined from the other. Each side listed the other within seconds.
+- **Each side translates for itself.** The phone translated Crystal's Spanish into English with Bergamot on the iPhone ("Translating on this phone · 1 model ready"). The Mac translated Elio's English into Spanish.
+- **Speech stays local.** Crystal's lines were spoken into the web UI and transcribed by Whisper on the Mac; only the text reached the phone.
+- **Casual speech is harder.** Whisper base made mistakes on fast, casual Spanish ("matriste", "estería"), and Bergamot translated those words as they came. Clear speech, or the `--asr small` model on a laptop, gives cleaner captions.
+
 ## Library
 
 ```js

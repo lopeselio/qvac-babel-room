@@ -2,6 +2,10 @@
 
 The Babel Room room on your phone: **hold to talk, read everyone in your language.** Built with Expo (SDK 54), [Tether QVAC](https://docs.qvac.tether.io/) and [Bare](https://github.com/holepunchto/bare). Phones, laptops running the [web UI](../README.md#web-ui) and the CLI all join the same rooms.
 
+| iPhone (English) | Web UI on a Mac (Spanish), same room |
+|---|---|
+| ![The iPhone app in a room with a web UI user](../docs/mobile/phone-room.png) | ![The web UI in the same room as the iPhone](../docs/mobile/web-room-with-phone.png) |
+
 ## How it's put together
 
 ```mermaid
