@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { appendFile } from 'node:fs/promises'
+import { transcriptLine } from './util.js'
 
 /**
  * Connects a Room (network), an optional Captioner (your voice → text) and a
@@ -71,8 +72,7 @@ export class BabelSession extends EventEmitter {
     const full = { ...line, at: when.toISOString() }
     this.emit('line', full)
     if (this.transcriptPath) {
-      const extra = full.original !== full.text ? ` _(${full.lang}: ${full.original})_` : ''
-      appendFile(this.transcriptPath, `- \`${when.toTimeString().slice(0, 8)}\` **${full.name}**: ${full.text}${extra}\n`).catch((e) => this.emit('error', e))
+      appendFile(this.transcriptPath, transcriptLine(full, when) + '\n').catch((e) => this.emit('error', e))
     }
   }
 
