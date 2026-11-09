@@ -58,6 +58,10 @@ export class Translator {
     this.onStatus = onStatus
     this.models = new Map() // `${from}>${to}` → Promise<{ modelId, route, queue }>
     this.llm = null // one shared LLM for all pairs
+    // Load models one at a time. Routes share files (es→it pivots through the
+    // same en→it model a direct en→it route uses), and two parallel downloads
+    // of one file fail in QVAC's cache with "File descriptor could not be locked".
+    this.loads = new Serial()
   }
 
   setTarget (lang) {
@@ -80,7 +84,7 @@ export class Translator {
             this.onStatus({ type: 'loading', from, to, route })
             const load = { modelSrc: this.sdk[route.model], modelConfig: { ctx_size: 2048 } }
             this.llm = ensureFits(this.sdk, [{ ...load, modelType: 'llamacpp-completion' }], { force: this.force })
-              .then(() => this.sdk.loadModel(load))
+              .then(() => this.loads.run(() => this.sdk.loadModel(load)))
               .then((modelId) => ({ modelId, queue: new Serial() }))
             this.llm.catch(() => { this.llm = null })
           }
@@ -90,11 +94,11 @@ export class Translator {
         this.onStatus({ type: 'loading', from, to, route })
         const modelConfig = { engine: 'Bergamot', from, to }
         if (route.kind === 'pivot') modelConfig.pivotModel = { modelSrc: this.sdk[route.pivot] }
-        const modelId = await this.sdk.loadModel({
+        const modelId = await this.loads.run(() => this.sdk.loadModel({
           modelSrc: this.sdk[route.model],
           modelConfig,
           onProgress: (pr) => this.onStatus({ type: 'download', from, to, percentage: pr.percentage })
-        })
+        }))
         this.onStatus({ type: 'ready', from, to, route })
         return { modelId, route, queue: new Serial() }
       })()
