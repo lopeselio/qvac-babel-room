@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events'
+import { EventEmitter } from '#events' // node:events, or bare-events in Bare
 import Hyperswarm from 'hyperswarm'
 import { Decoder, encode, roomTopic, PROTOCOL } from './protocol.js'
 
