@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'
 import { languages, makeTranslator, releaseSpeech, type ModelStatus, type TranslatorStatus } from './engine'
 import { normalizeCode, type Line, type RouteKind } from './lines'
 import { RoomClient } from './room-client'
@@ -15,7 +16,6 @@ interface RoomState {
   newCode: () => Promise<string>
   join: (code: string, name: string, lang: string) => Promise<void>
   say: (text: string) => void
-  setLang: (lang: string) => void
   leave: () => Promise<void>
 }
 
@@ -53,7 +53,7 @@ export function RoomProvider ({ children }: { children: ReactNode }) {
   useEffect(() => {
     const c = new RoomClient()
     client.current = c
-    return c.on((m) => {
+    const off = c.on((m) => {
       const r = roomRef.current
       if (!r) return
       if (m.t === 'peer') {
@@ -82,6 +82,8 @@ export function RoomProvider ({ children }: { children: ReactNode }) {
         chains.current.set(m.id, next)
       }
     })
+    // A remount (Fast Refresh, StrictMode) must not leave a second swarm running.
+    return () => { off(); c.close(); client.current = null }
   }, [addLine])
 
   const newCode = useCallback(async () => (await client.current!.request({ t: 'new' }, 'code')).code, [])
@@ -101,6 +103,8 @@ export function RoomProvider ({ children }: { children: ReactNode }) {
     try {
       await client.current!.request({ t: 'join', code: c, name: r.name, lang }, 'joined', 45000)
       setRoom(r)
+      // Keep the screen on while you're in a room, like a call.
+      void activateKeepAwakeAsync('babel-room').catch(() => {})
     } catch (err) {
       roomRef.current = null
       throw err
@@ -115,30 +119,18 @@ export function RoomProvider ({ children }: { children: ReactNode }) {
     addLine({ self: true, name: r.name, lang: r.lang, original: t, text: t, route: 'same' })
   }, [addLine])
 
-  const setLang = useCallback((lang: string) => {
-    const r = roomRef.current
-    if (!r || r.lang === lang) return
-    const next = { ...r, lang }
-    roomRef.current = next
-    setRoom(next)
-    client.current!.send({ t: 'lang', lang })
-    translator.current?.setTarget(lang)
-    setModels([])
-    void translator.current?.prepare(peers.map((p) => p.lang))
-    void releaseSpeech() // Whisper reloads for the new language on the next talk
-  }, [peers])
-
   const leave = useCallback(async () => {
     roomRef.current = null
     setRoom(null)
     setPeers([])
+    deactivateKeepAwake('babel-room')
     await client.current?.request({ t: 'leave' }, 'left', 10000).catch(() => {})
     await translator.current?.close()
     translator.current = null
     await releaseSpeech()
   }, [])
 
-  const value = useMemo(() => ({ langs, room, peers, lines, models, newCode, join, say, setLang, leave }), [langs, room, peers, lines, models, newCode, join, say, setLang, leave])
+  const value = useMemo(() => ({ langs, room, peers, lines, models, newCode, join, say, leave }), [langs, room, peers, lines, models, newCode, join, say, leave])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
