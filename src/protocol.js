@@ -6,7 +6,10 @@
 // into their own language locally, so nobody needs models for languages they
 // don't read, and no audio ever leaves the speaker's device.
 
-import { createHash, randomBytes } from 'node:crypto'
+// '#crypto' is node:crypto in Node and bare-crypto in Bare (see package.json
+// "imports"), so the room code also runs inside the mobile app's Bare worklet.
+import { createHash, randomBytes } from '#crypto'
+import b4a from 'b4a'
 
 export const PROTOCOL = 'babel-room/1'
 export const MAX_LINE_BYTES = 16 * 1024
@@ -89,7 +92,7 @@ export function sanitize (s) {
 
 export function encode (msg) {
   const line = JSON.stringify(msg) + '\n'
-  if (Buffer.byteLength(line) > MAX_LINE_BYTES) throw new Error('message too large')
+  if (b4a.byteLength(line) > MAX_LINE_BYTES) throw new Error('message too large')
   return line
 }
 
@@ -116,7 +119,7 @@ export class Decoder {
         if (m) out.push(m)
       } catch {}
     }
-    if (Buffer.byteLength(this.buf) > MAX_LINE_BYTES) {
+    if (b4a.byteLength(this.buf) > MAX_LINE_BYTES) {
       this.buf = ''
       this.onAbuse('line too long')
     }
