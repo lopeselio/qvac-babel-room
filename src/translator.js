@@ -1,4 +1,5 @@
 import { ensureFits } from './fit.js'
+import { retryLocked, Serial } from './util.js'
 
 // Picks and caches on-device translation models for each language pair.
 //
@@ -36,16 +37,6 @@ export function bergamotLanguages (sdk) {
   return [...langs].sort()
 }
 
-/** Tiny promise queue: QVAC models process one request at a time. */
-class Serial {
-  constructor () { this.tail = Promise.resolve() }
-  run (fn) {
-    const p = this.tail.then(fn, fn)
-    this.tail = p.catch(() => {})
-    return p
-  }
-}
-
 export class Translator {
   /**
    * @param {{ sdk: any, target: string, allowLlm?: boolean, onStatus?: (s: object) => void }} opts
@@ -58,9 +49,10 @@ export class Translator {
     this.onStatus = onStatus
     this.models = new Map() // `${from}>${to}` → Promise<{ modelId, route, queue }>
     this.llm = null // one shared LLM for all pairs
-    // Load models one at a time. Routes share files (es→it pivots through the
-    // same en→it model a direct en→it route uses), and two parallel downloads
-    // of one file fail in QVAC's cache with "File descriptor could not be locked".
+    // Load Bergamot models one at a time. Routes share files (es→it pivots
+    // through the same en→it model a direct en→it route uses), and two parallel
+    // downloads of one file fail in QVAC's cache with "File descriptor could
+    // not be locked". Another process doing the same is handled by retrying.
     this.loads = new Serial()
   }
 
@@ -84,7 +76,8 @@ export class Translator {
             this.onStatus({ type: 'loading', from, to, route })
             const load = { modelSrc: this.sdk[route.model], modelConfig: { ctx_size: 2048 } }
             this.llm = ensureFits(this.sdk, [{ ...load, modelType: 'llamacpp-completion' }], { force: this.force })
-              .then(() => this.loads.run(() => this.sdk.loadModel(load)))
+              // Its own file, so it doesn't hold up the small Bergamot models.
+              .then(() => retryLocked(() => this.sdk.loadModel(load)))
               .then((modelId) => ({ modelId, queue: new Serial() }))
             this.llm.catch(() => { this.llm = null })
           }
@@ -94,11 +87,11 @@ export class Translator {
         this.onStatus({ type: 'loading', from, to, route })
         const modelConfig = { engine: 'Bergamot', from, to }
         if (route.kind === 'pivot') modelConfig.pivotModel = { modelSrc: this.sdk[route.pivot] }
-        const modelId = await this.loads.run(() => this.sdk.loadModel({
+        const modelId = await this.loads.run(() => retryLocked(() => this.sdk.loadModel({
           modelSrc: this.sdk[route.model],
           modelConfig,
           onProgress: (pr) => this.onStatus({ type: 'download', from, to, percentage: pr.percentage })
-        }))
+        })))
         this.onStatus({ type: 'ready', from, to, route })
         return { modelId, route, queue: new Serial() }
       })()

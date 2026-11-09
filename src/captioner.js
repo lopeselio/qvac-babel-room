@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
 import { ensureFits } from './fit.js'
+import { retryLocked } from './util.js'
 
 export const SAMPLE_RATE = 16000
 
@@ -93,11 +94,11 @@ export class Captioner extends EventEmitter {
     const fit = await ensureFits(this.sdk, [{ modelSrc: this.sdk[name], modelType: 'whispercpp-transcription', modelConfig }], { force: this.force })
     this.emit('status', { type: 'fit', model: name, fit })
     this.emit('status', { type: 'loading', model: name })
-    this.modelId = await this.sdk.loadModel({
+    this.modelId = await retryLocked(() => this.sdk.loadModel({
       modelSrc: this.sdk[name],
       modelConfig,
       onProgress: (p) => this.emit('status', { type: 'download', model: name, percentage: p.percentage })
-    })
+    }))
     this.emit('status', { type: 'ready', model: name })
     return this
   }
@@ -128,13 +129,17 @@ export class Captioner extends EventEmitter {
    * Start a streaming session fed by push() instead of ffmpeg: the web UI
    * sends the browser's microphone as mono f32le @16 kHz.
    */
-  async startPush () {
-    if (!this.modelId) await this.load()
-    if (!this.session) {
-      this.session = await this.sdk.transcribeStream({ modelId: this.modelId })
-      this._pump()
-    }
-    return this
+  startPush () {
+    // Concurrent callers share one start, so Whisper is loaded once.
+    this._starting ??= (async () => {
+      if (!this.modelId) await this.load()
+      if (!this.session) {
+        this.session = await this.sdk.transcribeStream({ modelId: this.modelId })
+        this._pump()
+      }
+      return this
+    })().finally(() => { this._starting = null })
+    return this._starting
   }
 
   /** Feed raw mono f32le @16 kHz audio to a session started with startPush(). */
