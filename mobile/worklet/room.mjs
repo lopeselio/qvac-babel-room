@@ -2,10 +2,12 @@
 // CLI and the web UI use (Hyperswarm, end-to-end encrypted, no server). It
 // talks to the React Native side over BareKit's IPC as newline-delimited JSON:
 //
-//   app → worklet  { t: 'new' } | { t: 'join', code, name, lang } | { t: 'say', text } | { t: 'lang', lang } | { t: 'leave' }
-//   worklet → app  { t: 'code', code } | { t: 'joined', code } | { t: 'peer' | 'left-peer' | 'lang', id, name, lang }
-//                  { t: 'caption', id, name, lang, text } | { t: 'left' } | { t: 'error', message }
+//   app → worklet  { t: 'new' | 'join' | 'say' | 'leave', rid?, ... }
+//   worklet → app  { t: 'code' | 'joined' | 'left', rid } replies, { t: 'error', rid, message },
+//                  and events: { t: 'peer' | 'left-peer' | 'lang', id, name, lang }, { t: 'caption', id, name, lang, text }
 //
+// Requests carry an id (rid) that the reply echoes, so a late reply can never
+// settle a newer request. Messages are handled strictly one at a time.
 // Only caption text crosses the network; speech recognition and translation
 // run in QVAC on the React Native side.
 
@@ -28,18 +30,24 @@ async function leave () {
 async function handle (msg) {
   switch (msg.t) {
     case 'new':
-      return send({ t: 'code', code: newRoomCode() })
+      return send({ t: 'code', rid: msg.rid, code: newRoomCode() })
     case 'join': {
       await leave()
       const code = normalizeRoomCode(msg.code)
       const r = new Room({ code, name: String(msg.name).slice(0, 40), lang: msg.lang })
-      r.on('peer', (p) => send({ t: 'peer', ...p }))
-      r.on('leave', (p) => send({ t: 'left-peer', ...p }))
-      r.on('lang', (p) => send({ t: 'lang', ...p }))
-      r.on('caption', (c) => send({ t: 'caption', id: c.id, name: c.name, lang: c.lang, text: c.text }))
+      r.on('peer', (p) => { if (room === r) send({ t: 'peer', ...p }) })
+      r.on('leave', (p) => { if (room === r) send({ t: 'left-peer', ...p }) })
+      r.on('lang', (p) => { if (room === r) send({ t: 'lang', ...p }) })
+      r.on('caption', (c) => { if (room === r) send({ t: 'caption', id: c.id, name: c.name, lang: c.lang, text: c.text }) })
+      try {
+        await r.join()
+      } catch (err) {
+        // Never keep a half-joined swarm announcing you on the topic.
+        await r.leave().catch(() => {})
+        throw err
+      }
       room = r
-      await r.join()
-      return send({ t: 'joined', code })
+      return send({ t: 'joined', rid: msg.rid, code })
     }
     case 'say':
       return room?.say(String(msg.text))
@@ -47,9 +55,12 @@ async function handle (msg) {
       return room?.setLang(msg.lang)
     case 'leave':
       await leave()
-      return send({ t: 'left' })
+      return send({ t: 'left', rid: msg.rid })
   }
 }
+
+// One message at a time: a 'leave' can't run in the middle of a 'join'.
+let queue = Promise.resolve()
 
 // Split on the newline byte before decoding, so a character split across two
 // chunks is never decoded in halves.
@@ -63,6 +74,6 @@ IPC.on('data', (chunk) => {
     if (!line.trim()) continue
     let msg
     try { msg = JSON.parse(line) } catch { continue }
-    handle(msg).catch((err) => send({ t: 'error', message: err.message, for: msg.t }))
+    queue = queue.then(() => handle(msg)).catch((err) => send({ t: 'error', rid: msg.rid, message: err.message }))
   }
 })
