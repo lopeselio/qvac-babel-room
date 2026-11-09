@@ -51,6 +51,7 @@ Requirements: Node.js 22+, and [ffmpeg](https://ffmpeg.org/) for microphone or f
 babel-room new                                  print a fresh room code
 babel-room join <code> --lang <xx> [options]    join a room
 babel-room languages                            list supported languages
+babel-room ui [--port 4400] [--no-open]         the web UI (see below)
 ```
 
 | Option | |
@@ -66,6 +67,47 @@ babel-room languages                            list supported languages
 | `--force` | Load models even if the memory check says they likely won't fit |
 
 You can always type instead of speaking. In-room commands: `/lang <xx>`, `/peers`, `/mute`, `/unmute`, `/quit`.
+
+## Web UI
+
+```bash
+npm start                    # or: babel-room ui [--port 4400] [--no-open]
+```
+
+`babel-room ui` opens a local web page with the same room as the CLI. Each person runs their own:
+
+- **Join:** pick a name and the language you speak and read, then make a room code or paste one.
+- **Talk or type:** **Tap to talk** captures the microphone in the browser and sends it to the local server, where QVAC Whisper (with voice activity detection) turns it into captions. You can type instead.
+- **Read everyone in your language:** each caption shows its route (`es → en`, or `es → en → it` when Bergamot pivots through English), with the original underneath.
+- **See the room:** a side panel lists the people in the room and the models on this device, with download progress.
+- **Transcript:** download the conversation as Markdown, originals next to translations.
+
+The server listens on 127.0.0.1 only, checks the Host header, serves a strict Content-Security-Policy and only accepts JSON or raw-audio POSTs. Audio goes no further than that local server; only caption text reaches peers.
+
+To try it on one computer, run two or three with different ports, join the same code in different languages, and talk or type in one window:
+
+```bash
+babel-room ui --port 4400   # Ana, Spanish
+babel-room ui --port 4401   # Ben, English
+babel-room ui --port 4402   # Chiara, Italian
+```
+
+| Chiara reads Italian (Spanish arrives through English) | Ana reads Spanish |
+|---|---|
+| ![Chiara's room view in Italian: Ana's Spanish lines translated es → en → it, Ben's English translated en → it](docs/web/room-italian.png) | ![Ana's room view in Spanish: Ben's English and Chiara's Italian translated into Spanish, the microphone listening](docs/web/room-spanish.png) |
+
+| Ben reads English | Joining a room |
+|---|---|
+| ![Ben's room view in English: Ana's and Chiara's lines translated directly into English](docs/web/room-english.png) | ![The lobby: name, language and room code](docs/web/lobby.png) |
+
+Results from three Babel Room servers on one Mac (Spanish, English and Italian) over the public Hyperswarm network, with real QVAC models:
+
+- **No server in between.** The three peers found each other on the DHT from the room code and connected directly.
+- **Speech to captions on-device.** A spoken Spanish sentence, streamed to Ana's server as microphone audio, came out of Whisper (multilingual base) as "Hola a todos, empezamos la reunión en 5 minutos. ¿Me escucháis bien?".
+- **Each listener translates for themselves.** Ben read it as "Hello everyone, we started the meeting in 5 minutes. Do you listen to me well?" and Chiara in Italian, without Ana having any English or Italian model.
+- **Any pair through English.** Spanish ↔ Italian has no Bergamot model, so QVAC chained es → en → it (and it → en → es) inside one loaded model.
+- **Ready in seconds.** Every peer had its translation models downloaded and loaded 12 s after joining. Afterwards each line appeared on the other screens within a few seconds of being said or sent.
+- **Models load one at a time.** With three languages, two routes need the same file (en → it directly, and es → it through it). Loading them in parallel failed in QVAC's model cache ("File descriptor could not be locked"), so the translator now loads models one after another.
 
 ## Library
 
@@ -96,7 +138,9 @@ Each piece is usable alone. `Translator` is a small, cached, any-to-any on-devic
 ## Development
 
 ```bash
-npm test   # protocol, translator routing, captioner, session, plus a 4-peer room test on a local DHT testnet
+npm test        # protocol, translator routing, captioner, session, the web UI server, plus a 4-peer room test on a local DHT testnet
+npm run build:ui   # builds the React UI into ui/dist (npm start serves it)
+npm run dev:ui     # hot-reloading UI against a running `babel-room ui` on port 4400
 ```
 
 Tested end to end on macOS (Apple Silicon). Spanish speech was captioned by Whisper-base, then translated es→en→de on the receiving peer over the public Hyperswarm DHT. After the first model download, translations take about 100 ms per sentence.
