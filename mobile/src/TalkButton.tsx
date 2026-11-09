@@ -9,9 +9,10 @@ import { colors } from './ui'
 // it into text that is said in the room. The recording is deleted afterwards.
 //
 // Lessons from Pocket Tune's voice input on iOS: Expo's standard AAC preset
-// (iOS rejects some custom rates), a fresh recorder per take (one made before
-// the session allowed recording records silence), and metering to catch a
-// silent microphone before Whisper sees it.
+// (iOS rejects some custom rates); passing the options to
+// prepareToRecordAsync on every take, which makes expo-audio create a fresh
+// native recorder once the session allows recording (reusing the one made at
+// mount records silence); and metering to catch a silent microphone.
 
 const RECORDING: RecordingOptions = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true }
 const SILENCE_DB = -50
@@ -24,21 +25,30 @@ export function TalkButton ({ lang, onText, onStatus }: { lang: string, onText: 
   const [phase, setPhase] = useState<Phase>('idle')
   const peak = useRef<number | null>(null)
   const pressed = useRef(false)
+  const starting = useRef(false)
   if (phase === 'recording' && typeof rec.metering === 'number') peak.current = Math.max(peak.current ?? -Infinity, rec.metering)
 
   useEffect(() => () => { try { if (recorder.isRecording) void recorder.stop() } catch {} }, [recorder])
 
   async function start () {
     pressed.current = true
-    if (phase !== 'idle') return
+    // A second press while the first is still preparing starts nothing.
+    if (phase !== 'idle' || starting.current) return
+    starting.current = true
     onStatus(null)
-    const perm = await requestRecordingPermissionsAsync()
-    if (!perm.granted) return onStatus('Microphone access is off. Turn it on in Settings → Babel Room.')
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true })
-    await recorder.prepareToRecordAsync(RECORDING)
-    peak.current = null
-    recorder.record()
-    setPhase('recording')
+    try {
+      const perm = await requestRecordingPermissionsAsync()
+      if (!perm.granted) return onStatus('Microphone access is off. Turn it on in Settings → Babel Room.')
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true })
+      await recorder.prepareToRecordAsync(RECORDING)
+      peak.current = null
+      recorder.record()
+      setPhase('recording')
+    } catch (err: any) {
+      return onStatus(`Couldn't start recording: ${err?.message ?? err}`)
+    } finally {
+      starting.current = false
+    }
     if (!pressed.current) void stop() // released while the recorder was preparing
   }
 
