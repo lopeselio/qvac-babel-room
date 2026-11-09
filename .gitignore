@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 *.log
 .smoke/
+ui/dist/
+ui/node_modules/
+ui/tsconfig.tsbuildinfo

@@ -13,6 +13,7 @@ Usage:
   babel-room new                                  print a fresh room code
   babel-room join <code> --lang <xx> [options]    join a room
   babel-room languages                            list supported languages
+  babel-room ui [--port 4400] [--no-open]         open the web UI (one per person)
 
 Join options:
   --name <you>        display name (default: your user name)
@@ -65,6 +66,8 @@ async function main (argv) {
       transcript: { type: 'string' },
       original: { type: 'boolean' },
       force: { type: 'boolean' },
+      port: { type: 'string' },
+      'no-open': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
   })
@@ -84,6 +87,37 @@ async function main (argv) {
     console.log(`${langs.length} languages via Bergamot (any pair, pivoting through English):\n${langs.join(' ')}`)
     console.log(c.dim('More pairs with --llm (SalamandraTA 2B).'))
     process.exit(0)
+  }
+
+  if (cmd === 'ui') {
+    const { createUiServer } = await import('../src/ui-server.js')
+    const asrSize = v.asr ?? 'base'
+    if (!['tiny', 'base', 'small'].includes(asrSize)) throw new Error('--asr must be tiny, base or small')
+    // Import the SDK first: importing it registers SIGINT/SIGTERM handlers that
+    // kill its worker, and those are replaced below so leaving is clean.
+    let sdk = null
+    try { sdk = await loadSdk() } catch (err) { console.error(`⚠ ${err.message}`) }
+    const ui = createUiServer({ loadSdk: sdk ? async () => sdk : undefined, asrSize, log: (l) => console.error(c.dim(`▸ ${l}`)) })
+    const url = await ui.listen(Number(v.port ?? 4400))
+    console.log(`Babel Room: ${url}  (Ctrl+C to leave and stop)`)
+    console.error(c.dim('Run a second one with --port 4401 to be two people on one computer.'))
+    if (!v['no-open']) {
+      const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open'
+      const { spawn } = await import('node:child_process')
+      spawn(opener, [url], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+    }
+    process.removeAllListeners('SIGINT')
+    process.removeAllListeners('SIGTERM')
+    let stopping = false
+    const stop = async () => {
+      if (stopping) process.exit(130)
+      stopping = true
+      await ui.close()
+      process.exit(0)
+    }
+    process.on('SIGINT', stop)
+    process.on('SIGTERM', stop)
+    return new Promise(() => {})
   }
 
   if (cmd !== 'join') throw new Error(`Unknown command "${cmd}". Run babel-room --help.`)

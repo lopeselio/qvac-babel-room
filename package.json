@@ -13,11 +13,16 @@
   "files": [
     "bin",
     "src",
+    "ui/dist",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test"
+    "start": "node bin/babel-room.js ui",
+    "test": "node --test --test-timeout=90000",
+    "build:ui": "npm --prefix ui ci && npm --prefix ui run build",
+    "dev:ui": "npm --prefix ui run dev",
+    "prepack": "npm run build:ui"
   },
   "engines": {
     "node": ">=22"
