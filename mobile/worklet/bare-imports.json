@@ -1,0 +1,5 @@
+{
+  "events": "bare-events",
+  "crypto": "bare-crypto",
+  "buffer": "bare-buffer"
+}
