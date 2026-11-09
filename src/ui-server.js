@@ -20,12 +20,14 @@ import { Translator, bergamotLanguages } from './translator.js'
 import { Captioner } from './captioner.js'
 import { BabelSession } from './session.js'
 import { newRoomCode, normalizeRoomCode } from './protocol.js'
+import { Serial, transcriptLine } from './util.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MAX_BODY = 64 * 1024
 /** One POST of microphone audio: the page sends ~250 ms (16 KB) at a time. */
 const MAX_AUDIO = 256 * 1024
-const MAX_LINES = 500
+const MAX_LINES = 500 // kept for the page
+const MAX_TRANSCRIPT = 10000 // kept for the downloadable transcript
 const MAX_TEXT = 1000
 
 const MIME = {
@@ -67,15 +69,13 @@ export function createUiServer ({ loadSdk, uiDir = join(ROOT, 'ui', 'dist'), boo
   let mic = { on: false, state: 'off', model: null, download: null, error: null }
   const models = new Map() // `${from}>${to}` → { state, kind, download }
   let lines = []
+  let transcriptLines = []
+  let transcriptCut = false
   let closing = false
   const clients = new Set()
-  let work = Promise.resolve() // joins, leaves and language changes run one at a time
-
-  const serial = (fn) => {
-    const p = work.then(fn)
-    work = p.catch(() => {})
-    return p
-  }
+  const work = new Serial() // joins, leaves and language changes run one at a time
+  const serial = (fn) => work.run(fn)
+  let micStart = null // a start in flight, shared by concurrent callers
 
   function sdk () {
     if (!loadSdk) throw fail(503, "QVAC isn't available in this session (started without the SDK).")
@@ -106,6 +106,8 @@ export function createUiServer ({ loadSdk, uiDir = join(ROOT, 'ui', 'dist'), boo
   function pushLine (line) {
     lines.push(line)
     if (lines.length > MAX_LINES) lines = lines.slice(-MAX_LINES)
+    transcriptLines.push(line)
+    if (transcriptLines.length > MAX_TRANSCRIPT) { transcriptLines = transcriptLines.slice(-MAX_TRANSCRIPT); transcriptCut = true }
     emit({ type: 'line', line })
   }
 
@@ -139,16 +141,28 @@ export function createUiServer ({ loadSdk, uiDir = join(ROOT, 'ui', 'dist'), boo
     if (!bergamotLanguages(s).includes(lang)) throw fail(400, `${lang} isn't a language this QVAC build can translate.`)
     return serial(async () => {
       await leaveNow()
-      const translator = new Translator({ sdk: s, target: lang, allowLlm: body.allowLlm === true, onStatus: onTranslatorStatus })
+      // Everything below is tied to this room: events from a room you left
+      // (a translation that finishes late, say) are dropped, not shown here.
+      const entry = { code: normalized, name, lang, allowLlm: body.allowLlm === true }
+      const mine = (fn) => (...args) => { if (current === entry) fn(...args) }
+      const translator = new Translator({ sdk: s, target: lang, allowLlm: entry.allowLlm, onStatus: mine(onTranslatorStatus) })
       const room = new Room({ code: normalized, name, lang, bootstrap })
       const session = new BabelSession({ room, translator })
-      session.on('line', pushLine)
-      session.on('system', (m) => { pushLine({ system: true, text: m.message, at: new Date().toISOString() }); emit({ type: 'room', room: roomView() }) })
+      session.on('line', mine(pushLine))
+      session.on('system', mine((m) => { pushLine({ system: true, text: m.message, at: new Date().toISOString() }); emit({ type: 'room', room: roomView() }) }))
       session.on('error', (err) => log(`session error: ${err.message}`))
-      current = { code: normalized, name, lang, allowLlm: body.allowLlm === true, room, translator, session }
+      Object.assign(entry, { room, translator, session })
+      try {
+        await room.join()
+      } catch (err) {
+        await session.close().catch(() => {})
+        throw fail(503, `Couldn't reach the peer-to-peer network: ${err.message}`)
+      }
+      current = entry
       lines = []
+      transcriptLines = []
+      transcriptCut = false
       models.clear()
-      await room.join()
       emit(snapshot())
       return roomView()
     })
@@ -180,35 +194,49 @@ export function createUiServer ({ loadSdk, uiDir = join(ROOT, 'ui', 'dist'), boo
       c.lang = lang
       c.session.setLang(lang)
       emit({ type: 'room', room: roomView() })
-      if (wasOn) void startMic().catch(() => {})
+      if (wasOn) void startMic().catch((err) => log(`mic restart: ${err.message}`))
       return roomView()
     })
   }
 
   // ---------- microphone ----------
 
-  async function startMic () {
+  function startMic () {
+    micStart ??= startMicNow().finally(() => { micStart = null })
+    return micStart
+  }
+
+  async function startMicNow () {
     const c = requireRoom()
     const s = await sdk()
     if (!captioner) {
-      captioner = new Captioner({ sdk: s, lang: c.lang, size: asrSize })
-      captioner.on('text', (text) => current?.session.say(text))
-      captioner.on('error', (err) => setMic({ state: 'error', error: err.message }))
-      captioner.on('status', (st) => {
+      const cap = new Captioner({ sdk: s, lang: c.lang, size: asrSize })
+      const live = (fn) => (...args) => { if (captioner === cap) fn(...args) }
+      cap.on('text', live((text) => current?.session.say(text)))
+      cap.on('error', live((err) => setMic({ state: 'error', error: err.message })))
+      cap.on('status', live((st) => {
         if (st.type === 'loading') setMic({ state: 'loading', model: st.model })
         if (st.type === 'download') setMic({ state: 'downloading', model: st.model, download: Math.floor(st.percentage ?? 0) })
         if (st.type === 'ready') setMic({ state: 'listening', model: st.model, download: null })
-      })
+      }))
+      captioner = cap
     }
-    setMic({ on: true, error: null, state: captioner.modelId ? 'listening' : 'loading' })
+    const cap = captioner
+    setMic({ on: true, error: null, state: cap.modelId ? 'listening' : 'loading' })
     try {
-      await captioner.startPush()
-      captioner.mute(false)
-      setMic({ state: 'listening' })
+      await cap.startPush()
     } catch (err) {
-      setMic({ on: false, state: 'error', error: err.message })
+      if (captioner === cap) { captioner = null; setMic({ on: false, state: 'error', error: err.message }) }
+      await cap.stop().catch(() => {})
       throw fail(503, `Couldn't start speech recognition: ${err.message}`)
     }
+    // Left the room or changed language while Whisper was loading: this one is stale.
+    if (captioner !== cap || current !== c) {
+      await cap.stop().catch(() => {})
+      throw fail(409, 'The room changed while speech recognition was loading. Tap to talk again.')
+    }
+    cap.mute(false)
+    setMic({ on: true, state: 'listening' })
   }
 
   async function stopMic () {
@@ -229,12 +257,8 @@ export function createUiServer ({ loadSdk, uiDir = join(ROOT, 'ui', 'dist'), boo
   function transcript () {
     const c = current
     const head = c ? `# Babel Room ${c.code}\n\nYou: ${c.name} (${c.lang})\n\n` : '# Babel Room\n\n'
-    return head + lines.map((l) => {
-      const t = new Date(l.at).toTimeString().slice(0, 8)
-      if (l.system) return `- \`${t}\` _${l.text}_`
-      const extra = l.original !== l.text ? ` _(${l.lang}: ${l.original})_` : ''
-      return `- \`${t}\` **${l.name}**: ${l.text}${extra}`
-    }).join('\n') + '\n'
+    const cut = transcriptCut ? `_Only the last ${MAX_TRANSCRIPT} lines were kept._\n\n` : ''
+    return head + cut + transcriptLines.map((l) => transcriptLine(l)).join('\n') + '\n'
   }
 
   // ---------- http ----------
