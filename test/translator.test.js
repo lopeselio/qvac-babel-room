@@ -99,3 +99,26 @@ test('LLM fallback is fit-checked; a refusal is not cached', async () => {
   verdict = 'likely-fits'
   assert.equal((await tr.translate('こんにちは', 'ja')).route.kind, 'llm')
 })
+
+test('models load one at a time, so routes that share a file never download it twice at once', async () => {
+  let active = 0
+  let peak = 0
+  const sdk = {
+    ...SDK_CONSTANTS,
+    loadModel: async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      active--
+      return `m${peak}`
+    },
+    translate: ({ text }) => ({ text: Promise.resolve(text) }),
+    unloadModel: async () => {}
+  }
+  // A German listener: en→de direct and es→de (pivoting through the same en→de model).
+  const t = new Translator({ sdk, target: 'de' })
+  await t.prepare(['en', 'es'])
+  assert.equal(peak, 1)
+  // Translations themselves still run once the models are there.
+  assert.deepEqual(await Promise.all([t.translate('hi', 'en'), t.translate('hola', 'es')]).then((r) => r.map((x) => x.text)), ['hi', 'hola'])
+})
