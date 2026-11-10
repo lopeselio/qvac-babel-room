@@ -1,6 +1,6 @@
 {
   "name": "qvac-babel-room",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Serverless live-caption room: everyone speaks their own language, every peer reads everyone in theirs. Speech-to-text and translation run on-device with Tether QVAC; peers connect over Hyperswarm.",
   "type": "module",
   "main": "./src/index.js",
