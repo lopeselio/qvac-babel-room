@@ -46,3 +46,20 @@ test('Decoder handles split chunks, garbage and oversized lines', () => {
   d.push('x'.repeat(MAX_LINE_BYTES + 1))
   assert.equal(abused, 1)
 })
+
+test('Decoder keeps a multi-byte character that is split across chunks', () => {
+  const d = new Decoder()
+  const text = 'José dice: ¿empezamos? 你好 👋'
+  const bytes = Buffer.from(encode({ type: 'caption', seq: 0, lang: 'es', text, final: true }))
+  // Every possible split point, including inside é (2 bytes), 你 (3) and 👋 (4).
+  for (let cut = 1; cut < bytes.length; cut++) {
+    assert.deepEqual(d.push(bytes.subarray(0, cut)), [])
+    const [m] = d.push(bytes.subarray(cut))
+    assert.equal(m.text, text, `split at byte ${cut}`)
+  }
+  // One byte at a time.
+  let got = []
+  for (const b of bytes) got = got.concat(d.push(Buffer.from([b])))
+  assert.equal(got.length, 1)
+  assert.equal(got[0].text, text)
+})
