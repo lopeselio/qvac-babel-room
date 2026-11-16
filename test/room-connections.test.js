@@ -115,3 +115,26 @@ test('a peer that stays stalled is disconnected', async () => {
   assert.equal(ok.destroyed, false)
   ok.destroy()
 })
+
+test('a jump in seq is reported as a gap, across a reconnect too', () => {
+  const { connect, events } = setup()
+  const cap = (seq) => ({ type: 'caption', seq, lang: 'es', text: `n${seq}`, final: true })
+  const gaps = () => events.filter(([e]) => e === 'gap').map(([, p]) => p.missed)
+
+  // Joining late is not a gap: the first caption seen sets the baseline.
+  const first = connect(1); first.receive(hello('Ana', 'es'))
+  first.receive(cap(7)); first.receive(cap(8))
+  assert.deepEqual(gaps(), [])
+  first.receive(cap(11))
+  assert.deepEqual(gaps(), [2])
+  // A repeated or older seq is delivered but is not a gap.
+  first.receive(cap(11)); first.receive(cap(9))
+  assert.deepEqual(gaps(), [2])
+
+  // The count carries over when the connection is replaced.
+  const second = connect(1); second.receive(hello('Ana', 'es'))
+  second.receive(cap(15))
+  assert.deepEqual(gaps(), [2, 3])
+  assert.deepEqual(events.filter(([e]) => e === 'gap')[1][1].name, 'Ana')
+  second.destroy()
+})
