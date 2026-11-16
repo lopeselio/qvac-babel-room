@@ -18,6 +18,7 @@ const MAX_QUEUED_BYTES = 256 * 1024 // what we let pile up for a peer whose buff
  *   'leave'   ({ id, name })                 a peer disconnected
  *   'caption' ({ id, name, lang, text, seq, final })
  *   'lang'    ({ id, name, lang })           a peer changed language
+ *   'gap'     ({ id, name, missed })         captions from a peer were lost (by their seq)
  */
 export class Room extends EventEmitter {
   /**
@@ -94,7 +95,7 @@ export class Room extends EventEmitter {
     // A second connection to someone already here replaces the first one.
     const prev = this.peers.get(id)
     if (!prev && this.peers.size >= MAX_PEERS) return conn.destroy()
-    const peer = { conn, name: prev?.name ?? null, lang: prev?.lang ?? null, hello: false, stalled: null, queued: 0, window: 0, count: 0 }
+    const peer = { conn, name: prev?.name ?? null, lang: prev?.lang ?? null, hello: false, stalled: null, queued: 0, nextSeq: prev?.nextSeq ?? null, window: 0, count: 0 }
     this.peers.set(id, peer)
     if (prev) prev.conn.destroy()
     conn.on('error', () => {})
@@ -139,6 +140,10 @@ export class Room extends EventEmitter {
     if (msg.type === 'caption') {
       const now = Math.floor(Date.now() / 1000)
       if (peer.window !== now) { peer.window = now; peer.count = 0 }
+      // seq counts a speaker's captions, so a jump means some were lost on
+      // the way (a reconnect, or the sender dropping them for a stalled peer).
+      if (peer.nextSeq !== null && msg.seq > peer.nextSeq) this.emit('gap', { id, name: peer.name, missed: msg.seq - peer.nextSeq })
+      if (peer.nextSeq === null || msg.seq >= peer.nextSeq) peer.nextSeq = msg.seq + 1
       if (++peer.count > RATE_PER_SEC) return
       this.emit('caption', { id, name: peer.name, lang: msg.lang, text: msg.text, seq: msg.seq, final: msg.final })
     }
