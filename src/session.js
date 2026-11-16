@@ -29,6 +29,7 @@ export class BabelSession extends EventEmitter {
       this.emit('system', { message: `${p.name} left` })
       this._forget(p.id)
     })
+    room.on('gap', (p) => this.emit('system', { message: `${p.missed} caption${p.missed === 1 ? '' : 's'} from ${p.name} didn't arrive` }))
     room.on('lang', (p) => {
       this.emit('system', { message: `${p.name} now speaks ${p.lang}` })
       translator.prepare([p.lang]).catch(() => {})
