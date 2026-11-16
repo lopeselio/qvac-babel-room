@@ -25,7 +25,10 @@ export class BabelSession extends EventEmitter {
       this.emit('system', { message: `${p.name} joined (${p.lang})` })
       translator.prepare([p.lang]).catch(() => {})
     })
-    room.on('leave', (p) => this.emit('system', { message: `${p.name} left` }))
+    room.on('leave', (p) => {
+      this.emit('system', { message: `${p.name} left` })
+      this._forget(p.id)
+    })
     room.on('lang', (p) => {
       this.emit('system', { message: `${p.name} now speaks ${p.lang}` })
       translator.prepare([p.lang]).catch(() => {})
@@ -65,6 +68,13 @@ export class BabelSession extends EventEmitter {
     })
     this.chains.set(c.id, next)
     return next
+  }
+
+  /** Drop a departed speaker's chain once their pending lines have been shown. */
+  _forget (id) {
+    const tail = this.chains.get(id)
+    if (!tail) return
+    tail.then(() => { if (this.chains.get(id) === tail) this.chains.delete(id) })
   }
 
   _emitLine (line) {
