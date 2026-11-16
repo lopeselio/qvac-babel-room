@@ -33,7 +33,11 @@ test('validate accepts good messages and rejects bad ones', () => {
 })
 
 test('sanitize removes terminal escapes and bidi tricks', () => {
-  assert.equal(sanitize('\u001b[2J\u001b[31mhi‮ there\u0007'), 'hi there')
+  assert.equal(sanitize('\u001b[2J\u001b[31mhi\u202e there\u0007'), 'hi there')
+  // Zero-width marks, embeddings and overrides, and the isolates.
+  assert.equal(sanitize('a\u200bb\u200fc\u202ad\u202ee\u2066f\u2067g\u2068h\u2069i'), 'abcdefghi')
+  // Ordinary text in any script, tabs and newlines are kept.
+  assert.equal(sanitize('  José\t你好\n👋  '), 'José\t你好\n👋')
 })
 
 test('Decoder handles split chunks, garbage and oversized lines', () => {
