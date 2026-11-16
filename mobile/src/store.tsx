@@ -63,6 +63,9 @@ export function RoomProvider ({ children }: { children: ReactNode }) {
       } else if (m.t === 'left-peer') {
         setPeers((ps) => ps.filter((p) => p.id !== m.id))
         addLine({ system: true, self: false, name: m.name, lang: '', original: '', text: `${m.name} left`, route: 'same' })
+        // Drop their chain once their pending lines have been shown.
+        const tail = chains.current.get(m.id)
+        if (tail) void tail.then(() => { if (chains.current.get(m.id) === tail) chains.current.delete(m.id) })
       } else if (m.t === 'lang') {
         setPeers((ps) => ps.map((p) => (p.id === m.id ? { ...p, lang: m.lang } : p)))
         void translator.current?.prepare([m.lang])
