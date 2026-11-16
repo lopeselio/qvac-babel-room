@@ -86,8 +86,11 @@ export function validate (msg) {
 
 /** Strip control characters (incl. ANSI escapes) so a peer can't mess with your terminal. */
 export function sanitize (s) {
+  // Terminal escapes, control characters, zero-width marks (U+200B to U+200F)
+  // and everything that can reorder displayed text: bidi embeddings and
+  // overrides (U+202A to U+202E) and isolates (U+2066 to U+2069).
   // eslint-disable-next-line no-control-regex
-  return s.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f​-‏‪-‮]/g, '').trim()
+  return s.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim()
 }
 
 export function encode (msg) {
