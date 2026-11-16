@@ -79,3 +79,20 @@ test('writes a markdown transcript with originals', async (t) => {
   // Local wall-clock time, matching what the terminal shows.
   assert.equal(await readFile(file, 'utf8'), `- \`${when.toTimeString().slice(0, 8)}\` **Ana**: hola (in en) _(es: hola)_\n`)
 })
+
+test("a speaker's chain is dropped after they leave, once their pending lines are shown", async () => {
+  const room = fakeRoom()
+  const s = new BabelSession({ room, translator: fakeTranslator({ delays: { lento: 30 } }) })
+  const lines = []
+  s.on('line', (l) => lines.push(l.text))
+  const pending = s._incoming({ id: 'a', name: 'Ana', lang: 'es', text: 'lento', seq: 0 })
+  room.emit('leave', { id: 'a', name: 'Ana' })
+  assert.equal(s.chains.size, 1, 'kept while a line is still being translated')
+  await pending
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(lines, ['lento (in en)'])
+  assert.equal(s.chains.size, 0)
+  // Someone who never spoke leaves nothing behind either.
+  room.emit('leave', { id: 'z', name: 'Zed' })
+  assert.equal(s.chains.size, 0)
+})
