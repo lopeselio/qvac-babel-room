@@ -1,9 +1,12 @@
 import { EventEmitter } from '#events' // node:events, or bare-events in Bare
 import Hyperswarm from 'hyperswarm'
+import b4a from 'b4a'
 import { Decoder, encode, roomTopic, PROTOCOL } from './protocol.js'
 
 const MAX_PEERS = 32
 const RATE_PER_SEC = 20 // captions per second per peer before we drop them
+const SLOW_PEER_MS = 15000 // a peer that can't take writes for this long is disconnected
+const MAX_QUEUED_BYTES = 256 * 1024 // what we let pile up for a peer whose buffer is full
 
 /**
  * A room is everyone who joined the same topic. There is no server and no
@@ -18,9 +21,9 @@ const RATE_PER_SEC = 20 // captions per second per peer before we drop them
  */
 export class Room extends EventEmitter {
   /**
-   * @param {{ code: string, name: string, lang: string, bootstrap?: any[], swarm?: Hyperswarm }} opts
+   * @param {{ code: string, name: string, lang: string, bootstrap?: any[], swarm?: Hyperswarm, slowPeerMs?: number }} opts
    */
-  constructor ({ code, name, lang, bootstrap, swarm }) {
+  constructor ({ code, name, lang, bootstrap, swarm, slowPeerMs = SLOW_PEER_MS }) {
     super()
     this.code = code
     this.name = name
@@ -29,6 +32,7 @@ export class Room extends EventEmitter {
     this.swarm = swarm ?? new Hyperswarm(bootstrap ? { bootstrap, maxPeers: MAX_PEERS } : { maxPeers: MAX_PEERS })
     this.peers = new Map() // id → { conn, name, lang }
     this.seq = 0
+    this.slowPeerMs = slowPeerMs
     this._onConnection = this._onConnection.bind(this)
     this.swarm.on('connection', this._onConnection)
   }
@@ -57,13 +61,32 @@ export class Room extends EventEmitter {
 
   async leave () {
     this.swarm.off('connection', this._onConnection)
-    for (const { conn } of this.peers.values()) conn.end()
+    for (const peer of this.peers.values()) { this._resume(peer); peer.conn.end() }
     await this.swarm.destroy()
   }
 
   _broadcast (msg) {
     const line = encode(msg)
-    for (const { conn } of this.peers.values()) conn.write(line)
+    for (const peer of this.peers.values()) this._send(peer, line)
+  }
+
+  // Backpressure: a connection whose buffer is full is "stalled" until it
+  // drains. A short burst is still queued for it, up to MAX_QUEUED_BYTES;
+  // past that its captions are dropped (they are live, not a log), so one
+  // stalled listener can't make us buffer without limit. A peer that stays
+  // stalled for slowPeerMs is disconnected.
+  _send (peer, line) {
+    if (peer.stalled) {
+      peer.queued += b4a.byteLength(line)
+      if (peer.queued > MAX_QUEUED_BYTES) return false
+      peer.conn.write(line)
+      return true
+    }
+    if (peer.conn.write(line) === false) {
+      peer.queued = 0
+      peer.stalled = setTimeout(() => peer.conn.destroy(), this.slowPeerMs)
+    }
+    return true
   }
 
   _onConnection (conn, info) {
@@ -71,7 +94,7 @@ export class Room extends EventEmitter {
     // A second connection to someone already here replaces the first one.
     const prev = this.peers.get(id)
     if (!prev && this.peers.size >= MAX_PEERS) return conn.destroy()
-    const peer = { conn, name: prev?.name ?? null, lang: prev?.lang ?? null, hello: false, window: 0, count: 0 }
+    const peer = { conn, name: prev?.name ?? null, lang: prev?.lang ?? null, hello: false, stalled: null, queued: 0, window: 0, count: 0 }
     this.peers.set(id, peer)
     if (prev) prev.conn.destroy()
     conn.on('error', () => {})
@@ -81,12 +104,19 @@ export class Room extends EventEmitter {
     conn.on('data', (chunk) => {
       for (const msg of decoder.push(chunk)) this._onMessage(id, peer, msg)
     })
+    conn.on('drain', () => this._resume(peer))
     conn.on('close', () => {
+      this._resume(peer)
       // The close of a replaced connection must not remove its replacement.
       if (this.peers.get(id) !== peer) return
       this.peers.delete(id)
       if (peer.name) this.emit('leave', { id, name: peer.name })
     })
+  }
+
+  _resume (peer) {
+    clearTimeout(peer.stalled)
+    peer.stalled = null
   }
 
   _onMessage (id, peer, msg) {
