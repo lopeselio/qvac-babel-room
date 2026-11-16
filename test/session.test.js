@@ -96,3 +96,13 @@ test("a speaker's chain is dropped after they leave, once their pending lines ar
   room.emit('leave', { id: 'z', name: 'Zed' })
   assert.equal(s.chains.size, 0)
 })
+
+test('lost captions are reported as a system line', () => {
+  const room = fakeRoom()
+  const s = new BabelSession({ room, translator: fakeTranslator() })
+  const notes = []
+  s.on('system', (m) => notes.push(m.message))
+  room.emit('gap', { id: 'a', name: 'Ana', missed: 1 })
+  room.emit('gap', { id: 'a', name: 'Ana', missed: 3 })
+  assert.deepEqual(notes, ["1 caption from Ana didn't arrive", "3 captions from Ana didn't arrive"])
+})
