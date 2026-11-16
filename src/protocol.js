@@ -99,28 +99,33 @@ export function encode (msg) {
 /**
  * Incremental line decoder. Returns valid messages; drops garbage. Calls
  * onAbuse when a peer exceeds the line limit (caller should disconnect).
+ *
+ * Bytes are buffered and split on the newline byte before decoding, so a
+ * multi-byte character that arrives split across two chunks is never decoded
+ * in halves (0x0a can't appear inside a multi-byte UTF-8 sequence).
  */
 export class Decoder {
   constructor ({ onAbuse = () => {} } = {}) {
-    this.buf = ''
+    this.buf = b4a.alloc(0)
     this.onAbuse = onAbuse
   }
 
   push (chunk) {
-    this.buf += chunk.toString('utf8')
+    if (typeof chunk === 'string') chunk = b4a.from(chunk)
+    this.buf = this.buf.length ? b4a.concat([this.buf, chunk]) : chunk
     const out = []
     let i
-    while ((i = this.buf.indexOf('\n')) !== -1) {
-      const line = this.buf.slice(0, i)
-      this.buf = this.buf.slice(i + 1)
+    while ((i = b4a.indexOf(this.buf, 0x0a)) !== -1) {
+      const line = b4a.toString(this.buf.subarray(0, i), 'utf8')
+      this.buf = this.buf.subarray(i + 1)
       if (!line.trim()) continue
       try {
         const m = validate(JSON.parse(line))
         if (m) out.push(m)
       } catch {}
     }
-    if (b4a.byteLength(this.buf) > MAX_LINE_BYTES) {
-      this.buf = ''
+    if (this.buf.length > MAX_LINE_BYTES) {
+      this.buf = b4a.alloc(0)
       this.onAbuse('line too long')
     }
     return out
