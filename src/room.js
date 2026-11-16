@@ -68,9 +68,12 @@ export class Room extends EventEmitter {
 
   _onConnection (conn, info) {
     const id = info.publicKey.toString('hex')
-    if (this.peers.size >= MAX_PEERS) return conn.destroy()
-    const peer = { conn, name: null, lang: null, window: 0, count: 0 }
+    // A second connection to someone already here replaces the first one.
+    const prev = this.peers.get(id)
+    if (!prev && this.peers.size >= MAX_PEERS) return conn.destroy()
+    const peer = { conn, name: prev?.name ?? null, lang: prev?.lang ?? null, hello: false, window: 0, count: 0 }
     this.peers.set(id, peer)
+    if (prev) prev.conn.destroy()
     conn.on('error', () => {})
     conn.write(encode({ type: 'hello', protocol: PROTOCOL, name: this.name, lang: this.lang }))
 
@@ -79,6 +82,8 @@ export class Room extends EventEmitter {
       for (const msg of decoder.push(chunk)) this._onMessage(id, peer, msg)
     })
     conn.on('close', () => {
+      // The close of a replaced connection must not remove its replacement.
+      if (this.peers.get(id) !== peer) return
       this.peers.delete(id)
       if (peer.name) this.emit('leave', { id, name: peer.name })
     })
@@ -86,13 +91,16 @@ export class Room extends EventEmitter {
 
   _onMessage (id, peer, msg) {
     if (msg.type === 'hello') {
-      const first = !peer.name
+      const known = peer.name !== null // already announced, on this connection or the one it replaced
+      const langChanged = known && peer.lang !== msg.lang
+      peer.hello = true
       peer.name = msg.name
       peer.lang = msg.lang
-      if (first) this.emit('peer', { id, name: peer.name, lang: peer.lang })
+      if (!known) this.emit('peer', { id, name: peer.name, lang: peer.lang })
+      else if (langChanged) this.emit('lang', { id, name: peer.name, lang: peer.lang })
       return
     }
-    if (!peer.name) return // must say hello first
+    if (!peer.hello) return // must say hello first, on every connection
     if (msg.type === 'lang') {
       peer.lang = msg.lang
       this.emit('lang', { id, name: peer.name, lang: msg.lang })
